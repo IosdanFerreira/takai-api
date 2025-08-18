@@ -70,7 +70,7 @@ export class SyncService {
       );
     }
 
-    console.log('Criando um novo pedido', order);
+    console.log('Criando um novo pedido', newOrderFormatted);
   }
 
   async syncProducts() {
