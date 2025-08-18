@@ -1,0 +1,186 @@
+import * as https from 'https';
+
+import { Injectable, Logger } from '@nestjs/common';
+import axios, { AxiosError, AxiosInstance } from 'axios';
+
+import { ConfigService } from '@nestjs/config';
+import { OmniClient } from './interfaces/omnia-client.interface';
+import { OmniaPaginatedResponse } from './interfaces/omnia-paginated.interface';
+import { OmniaPriceInterface } from './interfaces/omnia-price.interface';
+import { OmniaProduct } from './interfaces/omnia-product';
+import { OmniaStockInterface } from './interfaces/omnia-stock.interface';
+
+interface AuthResponse {
+  token: string;
+}
+
+@Injectable()
+export class OmniaService {
+  private readonly logger = new Logger(OmniaService.name);
+  private api: AxiosInstance;
+
+  constructor(private configService: ConfigService) {
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+    this.api = axios.create({
+      baseURL: this.configService.get<string>('OMNIA_API_URL'),
+      timeout: 60000,
+      httpsAgent,
+    });
+  }
+
+  async getToken(): Promise<string> {
+    const username = this.configService.get<string>('OMNIA_API_USERNAME');
+    const password = this.configService.get<string>('OMNIA_API_PASSWORD');
+
+    if (!username || !password) {
+      throw new Error('Credenciais de API não configuradas');
+    }
+
+    try {
+      const authResponse = await this.api.post<AuthResponse>(
+        '/token',
+        {},
+        {
+          auth: { username, password },
+        },
+      );
+
+      this.logger.log('Novo token gerado com sucesso');
+      return authResponse.data.token;
+    } catch (error) {
+      this.logger.error('Falha na autenticação com a API Omnia', error.stack);
+      throw new Error('Falha na autenticação com a API Omnia');
+    }
+  }
+
+  async getClientByCpfOrCnpj(cpfOrCnpj: string): Promise<OmniClient[]> {
+    if (!cpfOrCnpj) {
+      throw new Error('CPF/CNPJ não informado');
+    }
+
+    try {
+      const token = await this.getToken();
+
+      const response = await this.api.get<OmniClient[]>(
+        `/api/clientes/${cpfOrCnpj}/cnpjcpf`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        this.logger.error(
+          `Erro ao buscar cliente ${cpfOrCnpj}: ${error.message}`,
+          error.stack,
+        );
+        throw new Error(
+          `Falha ao buscar cliente: ${error.response?.data?.message || error.message}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async fetchAllPagesConcurrent<T>(
+    endpoint: string,
+    token: string,
+    concurrency = 5, // quantas páginas buscar ao mesmo tempo
+    maxRetries = 3, // quantas tentativas antes de desistir
+  ): Promise<T[]> {
+    const pageSize = 1000;
+
+    const fetchPage = async (page: number, attempt = 1): Promise<T[]> => {
+      try {
+        const response = await this.api.get<OmniaPaginatedResponse<T>>(
+          `${endpoint}?page=${page}&pagesize=${pageSize}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        return response.data.data;
+      } catch (error) {
+        if (attempt <= maxRetries) {
+          const delay = 1000 * attempt; // backoff exponencial
+          this.logger.warn(
+            `Falha ao buscar página ${page} (tentativa ${attempt}). Retentando em ${delay}ms...`,
+          );
+          await new Promise((res) => setTimeout(res, delay));
+          return fetchPage(page, attempt + 1);
+        }
+        this.logger.error(
+          `Página ${page} falhou após ${maxRetries} tentativas.`,
+          error,
+        );
+        return [];
+      }
+    };
+
+    //  Busca a primeira página para descobrir totalpages
+    const firstResponse = await this.api.get<OmniaPaginatedResponse<T>>(
+      `${endpoint}?page=1&pagesize=${pageSize}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    const totalPages = firstResponse.data.pagination.totalpages;
+
+    const results: T[] = [...firstResponse.data.data];
+    const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+    // Processa páginas restantes em lotes
+    for (let i = 0; i < pages.length; i += concurrency) {
+      const batch = pages.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map((page) => fetchPage(page)),
+      );
+      batchResults.forEach((pageData) => results.push(...pageData));
+    }
+
+    return results;
+  }
+
+  async getProducts(): Promise<OmniaProduct[]> {
+    const token = await this.getToken();
+
+    return this.fetchAllPagesConcurrent<OmniaProduct>(
+      '/api/v1/produtos',
+      token,
+    );
+  }
+
+  async getStock(): Promise<OmniaStockInterface[]> {
+    const token = await this.getToken();
+    this.logger.log('Buscando estoques...');
+    return this.fetchAllPagesConcurrent<any>('/api/v1/estoques', token);
+  }
+
+  async getPrices(): Promise<OmniaPriceInterface[]> {
+    const token = await this.getToken();
+    this.logger.log('Buscando preços...');
+    return this.fetchAllPagesConcurrent<any>('/api/v1/precos', token);
+  }
+
+  async createClient(client: OmniClient): Promise<any> {
+    const token = await this.getToken();
+    this.logger.log('Criando cliente...');
+
+    return this.api.post<OmniClient>('/api/va/clientes', client, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  }
+
+  async createOrder(order: any): Promise<any> {
+    const token = await this.getToken();
+    this.logger.log('Criando pedido...');
+
+    return this.api.post<any>('/api/v1/pedidos', order, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  }
+}
