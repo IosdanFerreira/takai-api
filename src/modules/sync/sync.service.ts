@@ -6,6 +6,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { OmniaPriceInterface } from '../omnia/interfaces/omnia-price.interface';
 import { OmniaProduct } from '../omnia/interfaces/omnia-product';
@@ -13,6 +14,7 @@ import { OmniaService } from '../omnia/omnia.service';
 import { Order } from 'src/shared/interfaces/woocommerce-order.interface';
 import { WoocommerceService } from '../woocommerce/woocommerce.service';
 import { getIbgeCodeByCep } from 'src/shared/utils/getCityCodeIbge.utils';
+import { normalizeSku } from 'src/shared/utils/normalizeSku.utils';
 import { processBatch } from 'src/shared/utils/proccessBatch.utils';
 import { retry } from 'src/shared/utils/retry.utils';
 
@@ -91,16 +93,11 @@ export class SyncService {
     this.logger.log(`Omnia Estoque: ${omniaStock.length}`);
     this.logger.log(`Omnia Preços: ${omniaPrices.length}`);
 
-    // Mapas
     const wcProductMap = new Map<string, any>();
     const wcSkus = new Set<string>();
-
     woocommerceProducts.forEach((p) => {
-      if (!p.sku) {
-        this.logger.warn(`Produto Woo sem SKU: ID ${p.id}`);
-        return;
-      }
-      const sku = String(p.sku).trim();
+      if (!p.sku) return;
+      const sku = normalizeSku(p.sku);
       wcProductMap.set(sku, p);
       wcSkus.add(sku);
     });
@@ -117,15 +114,24 @@ export class SyncService {
       omniaStockMap.set(sku, current + Number(s.estoque ?? 0));
     });
 
-    // Categorizar
-    const newProducts = omniaProducts.filter(
-      (p) => !wcSkus.has(String(p.codprod).trim()),
-    );
-    const updateProducts = omniaProducts.filter((p) =>
-      wcSkus.has(String(p.codprod).trim()),
-    );
+    const newProducts: OmniaProduct[] = [];
+    const updateProducts: OmniaProduct[] = [];
+
+    omniaProducts.forEach((p) => {
+      const sku = normalizeSku(String(p.codprod));
+      if (wcSkus.has(sku)) {
+        updateProducts.push(p);
+      } else {
+        newProducts.push(p);
+      }
+    });
+
     const deleteProducts = woocommerceProducts.filter(
-      (p) => p.sku && !omniaProductMap.has(String(p.sku).trim()),
+      (p) =>
+        p.sku &&
+        !omniaProducts.some(
+          (op) => normalizeSku(String(op.codprod)) === normalizeSku(p.sku),
+        ),
     );
 
     this.logger.log(
@@ -136,6 +142,7 @@ export class SyncService {
     await this.createProductsBatch(
       newProducts,
       wcSkus,
+      wcProductMap,
       omniaStockMap,
       omniaPriceMap,
     );
@@ -151,32 +158,82 @@ export class SyncService {
     this.logger.log(`✅ Sincronização concluída em ${duration}ms`);
   }
 
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleCron() {
+    this.logger.log('⏰ Executando sync automático (a cada hora)');
+    await this.syncProducts();
+  }
+
   private async createProductsBatch(
     newProducts: OmniaProduct[],
     wcSkus: Set<string>,
+    wcProductMap: Map<string, any>,
     omniaStockMap: Map<string, number>,
     omniaPriceMap: Map<string, OmniaPriceInterface>,
   ) {
     const seenSkus = new Set<string>();
+    const failedSkus = new Set<string>();
+
     await processBatch(newProducts, async (product) => {
-      const sku = String(product.codprod).trim();
-      if (wcSkus.has(sku) || seenSkus.has(sku)) return;
+      const sku = normalizeSku(String(product.codprod));
+      if (wcSkus.has(sku) || seenSkus.has(sku) || failedSkus.has(sku)) return;
       seenSkus.add(sku);
 
       const stockQty = omniaStockMap.get(sku) ?? 0;
       const price = omniaPriceMap.get(sku);
 
-      this.logger.debug(
-        `Criando SKU ${sku} | Estoque: ${stockQty} | Preço: ${price?.pvenda}`,
-      );
+      if (!price) {
+        this.logger.warn(`Produto ${sku} sem preço no Omnia, pulando criação`);
+        return;
+      }
 
       await retry(async () => {
-        await this.woocommerceService.createProducts(
-          product,
-          { estoque: stockQty },
-          price,
-        );
-        this.logger.log(`✅ Criado SKU ${sku}`);
+        try {
+          await this.woocommerceService.createProducts(
+            product,
+            { estoque: stockQty },
+            price,
+          );
+          this.logger.log(`Criado SKU ${sku}`);
+        } catch (err: any) {
+          const code = err?.response?.data?.code;
+          const uniqueSku = err?.response?.data?.unique_sku;
+
+          if (
+            code === 'product_invalid_sku' ||
+            code === 'woocommerce_rest_product_not_created'
+          ) {
+            let wcProduct = wcProductMap.get(sku);
+            if (!wcProduct && uniqueSku) {
+              wcProduct = await this.woocommerceService
+                .getProductBySku(uniqueSku)
+                .catch(() => null);
+              if (wcProduct) wcProductMap.set(sku, wcProduct);
+            }
+
+            if (!wcProduct) {
+              this.logger.error(
+                `SKU ${sku} já existe no WooCommerce mas não encontrado, pulando update`,
+              );
+              failedSkus.add(sku);
+              return;
+            }
+
+            this.logger.warn(
+              `SKU ${sku} já existe, movendo para fluxo de update`,
+            );
+            await this.woocommerceService.updateProduct(
+              wcProduct.id,
+              product,
+              { estoque: stockQty },
+              price,
+            );
+            this.logger.log(`Atualizado SKU ${sku} no lugar de criar`);
+            return;
+          }
+
+          throw err;
+        }
       }).catch((err) => this.logger.error(`❌ Erro criar SKU ${sku}`, err));
     });
   }
@@ -190,13 +247,12 @@ export class SyncService {
     await processBatch(updateProducts, async (product) => {
       const sku = String(product.codprod).trim();
       const wcProduct = wcProductMap.get(sku);
-      const stockQty = Math.floor(omniaStockMap.get(sku) ?? 0);
+      const stockQty = omniaStockMap.get(sku) ?? 0;
       const price = omniaPriceMap.get(sku);
 
       if (!wcProduct || !price) return;
 
       const changes: string[] = [];
-
       const wcStock = Number(wcProduct.stock_quantity);
       if (wcStock !== stockQty)
         changes.push(`estoque: ${wcStock} → ${stockQty}`);
@@ -207,10 +263,6 @@ export class SyncService {
         changes.push(`preço: ${wcPrice} → ${omniaPriceRounded}`);
 
       if (changes.length > 0) {
-        this.logger.debug(
-          `Atualizando SKU ${sku} | Woo: ${wcStock} | Omnia: ${stockQty} | Preço: ${price.pvenda}`,
-        );
-
         await retry(async () => {
           await this.woocommerceService.updateProduct(
             wcProduct.id,
@@ -219,24 +271,23 @@ export class SyncService {
             price,
           );
           this.logger.log(
-            `🔄 Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`,
+            `Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`,
           );
         }).catch((err) =>
           this.logger.error(`❌ Erro atualizar SKU ${sku}`, err),
         );
-      } else {
-        this.logger.debug(`⏭️ Nenhuma mudança para SKU ${sku}, pulando update`);
       }
     });
   }
 
   private async deleteProductsBatch(deleteProducts: any[]) {
     await processBatch(deleteProducts, async (product) => {
+      const sku = String(product.sku).trim();
       await retry(async () => {
         await this.woocommerceService.deleteProduct(product.id);
-        this.logger.log(`🗑️ Atualizado draft SKU ${product.sku}`);
+        this.logger.log(`Produto movido para rascunho SKU ${sku}`);
       }).catch((err) =>
-        this.logger.error(`Erro draft SKU ${product.sku}`, err),
+        this.logger.error(`Erro ao deletar/draft SKU ${sku}`, err),
       );
     });
   }

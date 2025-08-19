@@ -3,6 +3,7 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { OmniaModule } from './modules/omnia/omnia.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { SyncModule } from './modules/sync/sync.module';
 import { WoocommerceModule } from './modules/woocommerce/woocommerce.module';
 
@@ -11,6 +12,7 @@ import { WoocommerceModule } from './modules/woocommerce/woocommerce.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     WoocommerceModule,
     OmniaModule,
     SyncModule,

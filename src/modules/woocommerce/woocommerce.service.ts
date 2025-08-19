@@ -59,14 +59,11 @@ export class WoocommerceService {
       return await this.api.post('products', productToCreate);
     } catch (err: any) {
       if (err.response) {
-        // Mostra de forma legível
         this.logger.error(
-          `❌ Erro criar SKU ${product.codprod}: ${JSON.stringify(err.response.data)}`,
+          `Erro criar SKU ${product.codprod}: ${JSON.stringify(err.response.data)}`,
         );
       } else {
-        this.logger.error(
-          `❌ Erro criar SKU ${product.codprod}: ${err.message}`,
-        );
+        this.logger.error(`Erro criar SKU ${product.codprod}: ${err.message}`);
       }
       throw err;
     }
@@ -83,6 +80,7 @@ export class WoocommerceService {
       description: product.descricaolonga || '',
       short_description: product.descricaocurta || '',
       regular_price: String(Number(price.pvenda).toFixed(2)),
+      manage_stock: true,
       stock_quantity: Math.floor(Number(stock.estoque ?? 0)),
       stock_status: Number(stock.estoque) > 0 ? 'instock' : 'outofstock',
       type: 'simple',
@@ -283,7 +281,7 @@ export class WoocommerceService {
         }
       }
 
-      // Para se já temos clientes suficientes para a página solicitada
+      // Se tiv4er clientes suficientes para a página solicitada
       if (customersMap.size >= page * perPage) break;
 
       // Passa para a próxima página do WooCommerce
@@ -366,5 +364,23 @@ export class WoocommerceService {
 
     this.logger.log(`Todos os produtos carregados: ${results.length}`);
     return results;
+  }
+
+  async getProductBySku(sku: string): Promise<any | null> {
+    if (!sku) return null;
+
+    try {
+      const response = await this.api.get('products', { sku });
+      const products = response.data;
+
+      if (Array.isArray(products) && products.length > 0) {
+        return products[0]; // retorna o primeiro encontrado
+      }
+
+      return null; // não encontrou
+    } catch (err: any) {
+      this.logger.error(`Erro ao buscar produto por SKU ${sku}`, err);
+      return null;
+    }
   }
 }
