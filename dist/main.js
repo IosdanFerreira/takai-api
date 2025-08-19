@@ -9,7 +9,7 @@ async function bootstrap() {
     });
     app.use('/sync/woocommerce/webhook/created-order', (0, body_parser_1.raw)({ type: () => true }));
     app.use((0, body_parser_1.json)());
-    await app.listen(3000);
+    await app.listen(process.env.APP_PORT, '0.0.0.0');
 }
 bootstrap();
 //# sourceMappingURL=main.js.map
