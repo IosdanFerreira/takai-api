@@ -12,6 +12,6 @@ async function bootstrap() {
 
   app.use(json());
 
-  await app.listen(3000);
+  await app.listen(process.env.APP_PORT, '0.0.0.0');
 }
 bootstrap();
