@@ -9,6 +9,7 @@ async function bootstrap() {
     });
     app.use('/sync/woocommerce/webhook/created-order', (0, body_parser_1.raw)({ type: () => true }));
     app.use((0, body_parser_1.json)());
+    console.log(`Aplicação rodando na porta ${process.env.APP_PORT}`);
     await app.listen(process.env.APP_PORT, '0.0.0.0');
 }
 bootstrap();
