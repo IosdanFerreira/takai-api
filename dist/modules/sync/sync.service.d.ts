@@ -4,7 +4,9 @@ import { WoocommerceService } from '../woocommerce/woocommerce.service';
 export declare class SyncService {
     private readonly omniaService;
     private readonly woocommerceService;
-    private logger;
+    private readonly logger;
+    private wooProductsMap;
+    private omniaProductsMap;
     constructor(omniaService: OmniaService, woocommerceService: WoocommerceService, logger: Logger);
     processNewOrder(rawBody: Buffer, signature: string): Promise<void>;
     syncProducts(): Promise<void>;
@@ -12,6 +14,8 @@ export declare class SyncService {
     private createProductsBatch;
     private updateProductsBatch;
     private deleteProductsBatch;
+    private handleProductError;
+    private verifySyncConsistency;
     private formatClient;
     private formatOrder;
 }

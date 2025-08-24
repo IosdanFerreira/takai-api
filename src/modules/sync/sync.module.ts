@@ -8,5 +8,6 @@ import { WoocommerceService } from '../woocommerce/woocommerce.service';
 @Module({
   controllers: [SyncController],
   providers: [SyncService, WoocommerceService, OmniaService, Logger],
+  exports: [SyncService],
 })
 export class SyncModule {}

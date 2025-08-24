@@ -1,10 +1,12 @@
+import { Logger, Module } from '@nestjs/common';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
-import { Module } from '@nestjs/common';
 import { OmniaModule } from './modules/omnia/omnia.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SyncModule } from './modules/sync/sync.module';
+import { SyncService } from './modules/sync/sync.service';
 import { WoocommerceModule } from './modules/woocommerce/woocommerce.module';
 
 @Module({
@@ -18,6 +20,6 @@ import { WoocommerceModule } from './modules/woocommerce/woocommerce.module';
     SyncModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, SyncService, Logger],
 })
 export class AppModule {}

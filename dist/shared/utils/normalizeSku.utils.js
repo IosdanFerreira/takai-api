@@ -2,6 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeSku = normalizeSku;
 function normalizeSku(sku) {
-    return sku.trim().toLowerCase();
+    if (!sku)
+        return '';
+    return sku
+        .toString()
+        .trim()
+        .replace(/[^\w\s]/gi, '')
+        .replace(/\s+/g, '');
 }
 //# sourceMappingURL=normalizeSku.utils.js.map

@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Query } from '@nestjs/common';
 import { WoocommerceService } from './woocommerce.service';
 import { OrderDirection } from 'src/shared/interfaces/order-direction.interface';
 import { OrderStatus } from 'src/shared/enum/order-status.enum';
@@ -26,6 +26,11 @@ export class WoocommerceController {
       orderby,
       order,
     );
+  }
+
+  @Get('produto/:sku')
+  async getProductBySku(@Param('sku') sku: string) {
+    return await this.wooService.getProductBySku(sku);
   }
 
   @Get('estoque')
@@ -62,21 +67,21 @@ export class WoocommerceController {
 
   @Get('total-produtos')
   async getAllProducts(): Promise<{
-    totalRecords: number;
-    durationMs: number;
+    totalRecords: any;
+    data: any[];
   }> {
-    const start = Date.now();
-
     const products = await this.wooService.getAllProductsConcurrent();
 
-    const durationMs = Date.now() - start;
-
     console.log(`Produtos WooCommerce: ${products.length}`);
-    console.log(`Tempo total: ${durationMs}ms`);
 
     return {
       totalRecords: products.length,
-      durationMs,
+      data: products,
     };
+  }
+
+  @Delete('produto/:sku')
+  async deleteProductBySku(@Param('sku') sku: string) {
+    return await this.wooService.deleteProductPermanently(sku);
   }
 }

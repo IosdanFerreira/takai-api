@@ -68,4 +68,5 @@ export declare class WoocommerceService {
     }>;
     getAllProductsConcurrent(): Promise<any[]>;
     getProductBySku(sku: string): Promise<any | null>;
+    deleteProductPermanently(productId: number | string): Promise<void>;
 }

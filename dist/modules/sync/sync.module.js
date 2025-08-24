@@ -19,6 +19,7 @@ exports.SyncModule = SyncModule = __decorate([
     (0, common_1.Module)({
         controllers: [sync_controller_1.SyncController],
         providers: [sync_service_1.SyncService, woocommerce_service_1.WoocommerceService, omnia_service_1.OmniaService, common_1.Logger],
+        exports: [sync_service_1.SyncService],
     })
 ], SyncModule);
 //# sourceMappingURL=sync.module.js.map

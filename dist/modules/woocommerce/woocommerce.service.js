@@ -47,6 +47,20 @@ let WoocommerceService = class WoocommerceService {
             dimensions: finalDimensions,
             type: 'simple',
             status: 'publish',
+            meta_data: [
+                {
+                    key: '_tiered_price_rules_type',
+                    value: 'fixed',
+                },
+                {
+                    key: '_fixed_price_rules',
+                    value: price.qtminimaatacado > 1
+                        ? {
+                            [price.qtminimaatacado.toString()]: Number(price.pvendaatacado).toFixed(2),
+                        }
+                        : {},
+                },
+            ],
         };
         try {
             return await this.api.post('products', productToCreate);
@@ -72,6 +86,20 @@ let WoocommerceService = class WoocommerceService {
             stock_status: Number(stock.estoque) > 0 ? 'instock' : 'outofstock',
             type: 'simple',
             status: 'publish',
+            meta_data: [
+                {
+                    key: '_tiered_price_rules_type',
+                    value: 'fixed',
+                },
+                {
+                    key: '_fixed_price_rules',
+                    value: price.qtminimaatacado > 1
+                        ? {
+                            [price.qtminimaatacado.toString()]: Number(price.pvendaatacado).toFixed(2),
+                        }
+                        : {},
+                },
+            ],
         };
         try {
             return await this.api.put(`products/${wcProductId}`, productToUpdate);
@@ -248,41 +276,46 @@ let WoocommerceService = class WoocommerceService {
         };
     }
     async getAllProductsConcurrent() {
-        const concurrency = Number(process.env.WOO_CONCURRENCY ?? 5);
         const perPage = 100;
-        const results = [];
-        const fetchWithRetry = async (page, retries = 3, delay = 1000) => {
-            for (let attempt = 1; attempt <= retries; attempt++) {
-                try {
-                    return await this.getProducts(page, perPage);
-                }
-                catch (err) {
-                    this.logger.warn(`Erro ao buscar página ${page}, tentativa ${attempt}/${retries}`);
-                    if (attempt === retries)
-                        throw err;
-                    await new Promise((res) => setTimeout(res, delay * attempt));
-                }
-            }
-        };
-        const firstPage = await fetchWithRetry(1);
-        results.push(...firstPage.data);
-        const totalPages = firstPage.pagination.totalPages;
-        const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-        this.logger.log(`Total de páginas: ${totalPages} (perPage=${perPage}, concorrência=${concurrency})`);
-        for (let i = 0; i < pages.length; i += concurrency) {
-            const batch = pages.slice(i, i + concurrency);
-            const batchResults = await Promise.all(batch.map((page) => fetchWithRetry(page).then((res) => res.data)));
-            batchResults.forEach((pageData) => results.push(...pageData));
-            this.logger.log(`Batch ${i / concurrency + 1} concluído (${results.length}/${perPage * totalPages} produtos carregados até agora)`);
+        const firstPage = await this.api.get('products', {
+            per_page: perPage,
+            page: 1,
+            orderby: 'id',
+            order: 'asc',
+            status: 'any',
+        });
+        const totalPages = parseInt(firstPage.headers['x-wp-totalpages'], 10) || 1;
+        const requests = [];
+        for (let page = 2; page <= totalPages; page++) {
+            requests.push(this.api.get('products', {
+                per_page: perPage,
+                page,
+                orderby: 'id',
+                order: 'asc',
+                status: 'any',
+            }));
         }
-        this.logger.log(`Todos os produtos carregados: ${results.length}`);
-        return results;
+        const results = await Promise.allSettled(requests);
+        const allProducts = [
+            ...firstPage.data,
+            ...results
+                .filter((r) => r.status === 'fulfilled')
+                .flatMap((r) => r.value.data),
+        ];
+        const unique = new Map();
+        for (const product of allProducts) {
+            unique.set(product.id, product);
+        }
+        return Array.from(unique.values());
     }
     async getProductBySku(sku) {
         if (!sku)
             return null;
         try {
-            const response = await this.api.get('products', { sku });
+            const response = await this.api.get('products', {
+                sku,
+                status: 'publish,draft,trash',
+            });
             const products = response.data;
             if (Array.isArray(products) && products.length > 0) {
                 return products[0];
@@ -290,8 +323,23 @@ let WoocommerceService = class WoocommerceService {
             return null;
         }
         catch (err) {
-            this.logger.error(`Erro ao buscar produto por SKU ${sku}`, err);
+            this.logger.error(`Erro ao buscar produto por SKU ${sku}`, err.response?.data || err);
             return null;
+        }
+    }
+    async deleteProductPermanently(productId) {
+        try {
+            await this.api.delete(`products/${productId}`, { force: true });
+            this.logger.log(`Produto deletado permanentemente: ID ${productId}`);
+        }
+        catch (err) {
+            if (err.response) {
+                this.logger.error(`Erro ao deletar permanentemente produto ID ${productId}: ${JSON.stringify(err.response.data)}`);
+            }
+            else {
+                this.logger.error(`Erro ao deletar permanentemente produto ID ${productId}: ${err.message}`);
+            }
+            throw err;
         }
     }
 };

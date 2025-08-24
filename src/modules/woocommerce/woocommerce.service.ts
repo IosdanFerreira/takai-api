@@ -6,7 +6,8 @@ import { OmniaStockInterface } from '../omnia/interfaces/omnia-stock.interface';
 import { OrderDirection } from 'src/shared/interfaces/order-direction.interface';
 import { OrderStatus } from 'src/shared/enum/order-status.enum';
 import WooCommerceRestApi from '@woocommerce/woocommerce-rest-api';
-import { WooCreateProductDto } from './dto/woo-create-product.dto';
+
+// import { WooCreateProductDto } from './dto/woo-create-product.dto';
 
 @Injectable()
 export class WoocommerceService {
@@ -53,6 +54,23 @@ export class WoocommerceService {
       dimensions: finalDimensions,
       type: 'simple',
       status: 'publish',
+      meta_data: [
+        {
+          key: '_tiered_price_rules_type',
+          value: 'fixed',
+        },
+        {
+          key: '_fixed_price_rules',
+          value:
+            price.qtminimaatacado > 1
+              ? {
+                  [price.qtminimaatacado.toString()]: Number(
+                    price.pvendaatacado,
+                  ).toFixed(2),
+                }
+              : {},
+        },
+      ],
     };
 
     try {
@@ -75,7 +93,7 @@ export class WoocommerceService {
     stock: OmniaStockInterface,
     price: OmniaPriceInterface,
   ) {
-    const productToUpdate: Partial<WooCreateProductDto> = {
+    const productToUpdate: Partial<any> = {
       name: product.nomeecommerce || product.descricao,
       description: product.descricaolonga || '',
       short_description: product.descricaocurta || '',
@@ -85,6 +103,23 @@ export class WoocommerceService {
       stock_status: Number(stock.estoque) > 0 ? 'instock' : 'outofstock',
       type: 'simple',
       status: 'publish',
+      meta_data: [
+        {
+          key: '_tiered_price_rules_type',
+          value: 'fixed',
+        },
+        {
+          key: '_fixed_price_rules',
+          value:
+            price.qtminimaatacado > 1
+              ? {
+                  [price.qtminimaatacado.toString()]: Number(
+                    price.pvendaatacado,
+                  ).toFixed(2),
+                }
+              : {},
+        },
+      ],
     };
 
     try {
@@ -314,73 +349,96 @@ export class WoocommerceService {
   }
 
   async getAllProductsConcurrent(): Promise<any[]> {
-    const concurrency = Number(process.env.WOO_CONCURRENCY ?? 5); // padrão = 5
     const perPage = 100;
-    const results: any[] = [];
 
-    // Função auxiliar com retry + backoff
-    const fetchWithRetry = async (
-      page: number,
-      retries = 3,
-      delay = 1000,
-    ): Promise<any> => {
-      for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-          return await this.getProducts(page, perPage);
-        } catch (err) {
-          this.logger.warn(
-            `Erro ao buscar página ${page}, tentativa ${attempt}/${retries}`,
-          );
-          if (attempt === retries) throw err;
-          await new Promise((res) => setTimeout(res, delay * attempt)); // backoff exponencial
-        }
-      }
-    };
+    // Primeira página
+    const firstPage = await this.api.get('products', {
+      per_page: perPage,
+      page: 1,
+      orderby: 'id',
+      order: 'asc',
+      status: 'any', // garante que pega publicados, rascunhos, privados etc.
+    });
 
-    // Primeira página para descobrir totalPages
-    const firstPage = await fetchWithRetry(1);
-    results.push(...firstPage.data);
+    const totalPages = parseInt(firstPage.headers['x-wp-totalpages'], 10) || 1;
 
-    const totalPages = firstPage.pagination.totalPages;
-    const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-
-    this.logger.log(
-      `Total de páginas: ${totalPages} (perPage=${perPage}, concorrência=${concurrency})`,
-    );
-
-    // Processa páginas restantes em lotes concorrentes
-    for (let i = 0; i < pages.length; i += concurrency) {
-      const batch = pages.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map((page) => fetchWithRetry(page).then((res) => res.data)),
-      );
-
-      batchResults.forEach((pageData) => results.push(...pageData));
-      this.logger.log(
-        `Batch ${i / concurrency + 1} concluído (${results.length}/${perPage * totalPages} produtos carregados até agora)`,
+    // Busca páginas restantes em paralelo
+    const requests = [];
+    for (let page = 2; page <= totalPages; page++) {
+      requests.push(
+        this.api.get('products', {
+          per_page: perPage,
+          page,
+          orderby: 'id',
+          order: 'asc',
+          status: 'any',
+        }),
       );
     }
 
-    this.logger.log(`Todos os produtos carregados: ${results.length}`);
-    return results;
+    const results = await Promise.allSettled(requests);
+
+    // Junta tudo
+    const allProducts = [
+      ...firstPage.data,
+      ...results
+        .filter(
+          (r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled',
+        )
+        .flatMap((r) => r.value.data),
+    ];
+
+    // Deduplicar pelo ID (garante que não tem repetidos por bug da API)
+    const unique = new Map<number, any>();
+    for (const product of allProducts) {
+      unique.set(product.id, product);
+    }
+
+    return Array.from(unique.values());
   }
 
   async getProductBySku(sku: string): Promise<any | null> {
     if (!sku) return null;
 
     try {
-      const response = await this.api.get('products', { sku });
+      const response = await this.api.get('products', {
+        sku,
+        status: 'publish,draft,trash',
+      });
       const products = response.data;
 
       if (Array.isArray(products) && products.length > 0) {
-        return products[0]; // retorna o primeiro encontrado
+        return products[0];
       }
 
-      return null; // não encontrou
-    } catch (err: any) {
-      this.logger.error(`Erro ao buscar produto por SKU ${sku}`, err);
       return null;
+    } catch (err: any) {
+      this.logger.error(
+        `Erro ao buscar produto por SKU ${sku}`,
+        err.response?.data || err,
+      );
+      return null;
+    }
+  }
+
+  async deleteProductPermanently(productId: number | string) {
+    try {
+      // O parâmetro 'force: true' apaga o produto permanentemente
+      await this.api.delete(`products/${productId}`, { force: true });
+      this.logger.log(`Produto deletado permanentemente: ID ${productId}`);
+    } catch (err: any) {
+      if (err.response) {
+        this.logger.error(
+          `Erro ao deletar permanentemente produto ID ${productId}: ${JSON.stringify(
+            err.response.data,
+          )}`,
+        );
+      } else {
+        this.logger.error(
+          `Erro ao deletar permanentemente produto ID ${productId}: ${err.message}`,
+        );
+      }
+      throw err;
     }
   }
 }

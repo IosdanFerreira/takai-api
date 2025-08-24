@@ -15,6 +15,7 @@ export declare class WoocommerceController {
         };
         data: any;
     }>;
+    getProductBySku(sku: string): Promise<any>;
     getProductsStock(page: number, perPage: number, orderby: string, order: OrderDirection): Promise<{
         pagination: {
             currentPage: number;
@@ -49,7 +50,8 @@ export declare class WoocommerceController {
         data: any[];
     }>;
     getAllProducts(): Promise<{
-        totalRecords: number;
-        durationMs: number;
+        totalRecords: any;
+        data: any[];
     }>;
+    deleteProductBySku(sku: string): Promise<void>;
 }

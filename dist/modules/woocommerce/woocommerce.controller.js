@@ -23,6 +23,9 @@ let WoocommerceController = class WoocommerceController {
     async getProducts(page = 1, perPage = 20, search, orderby, order) {
         return await this.wooService.getProducts(page, perPage, search, orderby, order);
     }
+    async getProductBySku(sku) {
+        return await this.wooService.getProductBySku(sku);
+    }
     async getProductsStock(page = 1, perPage = 20, orderby, order) {
         return await this.wooService.getProductsStock(page, perPage, orderby, order);
     }
@@ -33,15 +36,15 @@ let WoocommerceController = class WoocommerceController {
         return await this.wooService.getAllCustomersFromOrders(page, perPage);
     }
     async getAllProducts() {
-        const start = Date.now();
         const products = await this.wooService.getAllProductsConcurrent();
-        const durationMs = Date.now() - start;
         console.log(`Produtos WooCommerce: ${products.length}`);
-        console.log(`Tempo total: ${durationMs}ms`);
         return {
             totalRecords: products.length,
-            durationMs,
+            data: products,
         };
+    }
+    async deleteProductBySku(sku) {
+        return await this.wooService.deleteProductPermanently(sku);
     }
 };
 exports.WoocommerceController = WoocommerceController;
@@ -56,6 +59,13 @@ __decorate([
     __metadata("design:paramtypes", [Number, Number, String, String, String]),
     __metadata("design:returntype", Promise)
 ], WoocommerceController.prototype, "getProducts", null);
+__decorate([
+    (0, common_1.Get)('produto/:sku'),
+    __param(0, (0, common_1.Param)('sku')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], WoocommerceController.prototype, "getProductBySku", null);
 __decorate([
     (0, common_1.Get)('estoque'),
     __param(0, (0, common_1.Query)('page')),
@@ -89,6 +99,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], WoocommerceController.prototype, "getAllProducts", null);
+__decorate([
+    (0, common_1.Delete)('produto/:sku'),
+    __param(0, (0, common_1.Param)('sku')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], WoocommerceController.prototype, "deleteProductBySku", null);
 exports.WoocommerceController = WoocommerceController = __decorate([
     (0, common_1.Controller)('woocommerce'),
     __metadata("design:paramtypes", [woocommerce_service_1.WoocommerceService])

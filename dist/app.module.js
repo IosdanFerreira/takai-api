@@ -7,13 +7,14 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
+const common_1 = require("@nestjs/common");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const config_1 = require("@nestjs/config");
-const common_1 = require("@nestjs/common");
 const omnia_module_1 = require("./modules/omnia/omnia.module");
 const schedule_1 = require("@nestjs/schedule");
 const sync_module_1 = require("./modules/sync/sync.module");
+const sync_service_1 = require("./modules/sync/sync.service");
 const woocommerce_module_1 = require("./modules/woocommerce/woocommerce.module");
 let AppModule = class AppModule {
 };
@@ -30,7 +31,7 @@ exports.AppModule = AppModule = __decorate([
             sync_module_1.SyncModule,
         ],
         controllers: [app_controller_1.AppController],
-        providers: [app_service_1.AppService],
+        providers: [app_service_1.AppService, sync_service_1.SyncService, common_1.Logger],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

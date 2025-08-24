@@ -30,7 +30,6 @@
     "@woocommerce/woocommerce-rest-api": "^1.0.2",
     "axios": "^1.11.0",
     "body-parser": "^2.2.0",
-    "nestjs-pino": "^4.4.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1"
   },
