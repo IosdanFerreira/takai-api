@@ -16,6 +16,7 @@ const schedule_1 = require("@nestjs/schedule");
 const omnia_service_1 = require("../omnia/omnia.service");
 const woocommerce_service_1 = require("../woocommerce/woocommerce.service");
 const getCityCodeIbge_utils_1 = require("../../shared/utils/getCityCodeIbge.utils");
+const proccessPaymentMethod_utils_1 = require("../../shared/utils/proccessPaymentMethod.utils");
 const proccessBatch_utils_1 = require("../../shared/utils/proccessBatch.utils");
 const retry_utils_1 = require("../../shared/utils/retry.utils");
 let SyncService = class SyncService {
@@ -46,15 +47,21 @@ let SyncService = class SyncService {
         }
         const order = JSON.parse(rawBody.toString('utf8'));
         const ibgeCode = await (0, getCityCodeIbge_utils_1.getIbgeCodeByCep)(order.billing.postcode.replace('-', ''));
-        const clientFromNewOrder = this.formatClient(order);
+        const clientFromNewOrder = this.formatClient(order, ibgeCode);
         const newOrderFormatted = this.formatOrder(order, ibgeCode);
         const clientExist = await this.omniaService.getClientByCpfOrCnpj(order?.billing?.persontype === 'F'
             ? order?.billing?.cpf
             : order?.billing?.cnpj);
         if (clientExist.length === 0) {
             this.logger.warn(clientFromNewOrder, 'Cliente inexistente, criando novo cliente');
+            await this.omniaService.createClient(clientFromNewOrder);
         }
-        this.logger.log('Criando um novo pedido', newOrderFormatted);
+        if (!order.date_paid) {
+            this.logger.error('Pedido sem data de pagamento', order);
+            return;
+        }
+        const newOrder = await this.omniaService.createOrder(newOrderFormatted);
+        this.logger.log('Pedido criado com sucesso', newOrder);
     }
     async syncProducts() {
         const startTime = Date.now();
@@ -216,7 +223,7 @@ let SyncService = class SyncService {
                 try {
                     await (0, retry_utils_1.retry)(async () => {
                         await this.woocommerceService.updateProduct(wcProduct.id, product, { estoque: stockQty }, price);
-                        this.logger.log(`🔄 Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`);
+                        this.logger.log(`Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`);
                     });
                 }
                 catch (err) {
@@ -327,8 +334,9 @@ let SyncService = class SyncService {
         const allProductsValue = order.line_items.reduce((acc, item) => {
             return Number(acc) + Number(item.total);
         }, 0);
+        const brand = order.meta_data.find((m) => m.key === '_wc_rede_transaction_brand')?.value;
         const newOrderFormatted = {
-            codparceiro: 'MIT-TECH',
+            codparceiro: 'DIGITAL',
             numpedweb: `PED-${order.number}`,
             data: order.date_created,
             condvenda: 1,
@@ -348,11 +356,11 @@ let SyncService = class SyncService {
             municent: order.billing.city,
             codcidadeibge: ibgeCode,
             telent: order.billing.phone.replace(/\D/g, ''),
-            telcelent: order.billing.cellphone.replace(/\D/g, ''),
+            telcelent: order.billing.phone.replace(/\D/g, ''),
             fretedespacho: 'C',
-            idtransportadora: 'CORREIOS SEDEX',
+            idtransportadora: order.shipping_lines[0].method_title,
             vlprodutos: allProductsValue,
-            vlfrete: order.shipping_tax,
+            vlfrete: order.shipping_total,
             vltotal: order.total,
             itens: order.line_items.map((item) => {
                 return {
@@ -367,12 +375,12 @@ let SyncService = class SyncService {
             pagamentos: [
                 {
                     adquirente: 'CIELO',
-                    formapagamento: order.payment_method,
+                    formapagamento: brand ? (0, proccessPaymentMethod_utils_1.proccessPaymentMethod)(brand) : 'PIX',
                     idpagamentopix: '',
                     nomeformapagamento: order.payment_method_title,
-                    nsucartao: '102030',
-                    parcelas: 3,
-                    valorpago: 120.0,
+                    nsucartao: order.meta_data.find((m) => m.key === '_wc_rede_transaction_nsu')?.value,
+                    parcelas: Number(order.meta_data.find((m) => m.key === '_wc_rede_transaction_installments')?.value ?? 1),
+                    valorpago: parseFloat(order.total),
                 },
             ],
         };

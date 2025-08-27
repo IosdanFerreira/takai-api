@@ -146,7 +146,7 @@ let OmniaService = OmniaService_1 = class OmniaService {
         const token = await this.getToken();
         this.logger.log('Criando cliente...');
         try {
-            const response = await this.api.post('/api/va/clientes', client, {
+            const response = await this.api.post('/api/clientes', client, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             return response.data;
@@ -161,7 +161,7 @@ let OmniaService = OmniaService_1 = class OmniaService {
         const token = await this.getToken();
         this.logger.log('Criando pedido...');
         try {
-            const response = await this.api.post('/api/v1/pedidos', order, {
+            const response = await this.api.post('/api/pedidos', order, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             return response.data;

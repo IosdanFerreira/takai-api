@@ -30,6 +30,8 @@ export interface Order {
   cart_hash: string;
   number: string;
   line_items: LineItem[];
+  meta_data: any[];
+  shipping_lines: any[];
 }
 
 export interface Billing {

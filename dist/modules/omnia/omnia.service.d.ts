@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { CreateOmniClientDto } from './interfaces/omnia-create-client.interface';
 import { OmniClient } from './interfaces/omnia-client.interface';
 import { OmniaPriceInterface } from './interfaces/omnia-price.interface';
 import { OmniaProduct } from './interfaces/omnia-product';
@@ -15,6 +16,6 @@ export declare class OmniaService {
     getProducts(): Promise<OmniaProduct[]>;
     getStock(): Promise<OmniaStockInterface[]>;
     getPrices(): Promise<OmniaPriceInterface[]>;
-    createClient(client: OmniClient): Promise<any>;
+    createClient(client: CreateOmniClientDto): Promise<any>;
     createOrder(order: any): Promise<any>;
 }

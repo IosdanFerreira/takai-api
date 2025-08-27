@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { CreateOmniClientDto } from '../omnia/interfaces/omnia-create-client.interface';
 import { OmniaPriceInterface } from '../omnia/interfaces/omnia-price.interface';
 import { OmniaProduct } from '../omnia/interfaces/omnia-product';
 import { OmniaService } from '../omnia/omnia.service';
@@ -15,6 +16,7 @@ import { OmniaStockInterface } from '../omnia/interfaces/omnia-stock.interface';
 import { Order } from 'src/shared/interfaces/woocommerce-order.interface';
 import { WoocommerceService } from '../woocommerce/woocommerce.service';
 import { getIbgeCodeByCep } from 'src/shared/utils/getCityCodeIbge.utils';
+import { proccessPaymentMethod } from 'src/shared/utils/proccessPaymentMethod.utils';
 import { processBatch } from 'src/shared/utils/proccessBatch.utils';
 import { retry } from 'src/shared/utils/retry.utils';
 
@@ -58,7 +60,7 @@ export class SyncService {
       order.billing.postcode.replace('-', ''),
     );
 
-    const clientFromNewOrder = this.formatClient(order);
+    const clientFromNewOrder = this.formatClient(order, ibgeCode);
 
     const newOrderFormatted = this.formatOrder(order, ibgeCode);
 
@@ -73,9 +75,18 @@ export class SyncService {
         clientFromNewOrder,
         'Cliente inexistente, criando novo cliente',
       );
+
+      await this.omniaService.createClient(clientFromNewOrder);
     }
 
-    this.logger.log('Criando um novo pedido', newOrderFormatted);
+    if (!order.date_paid) {
+      this.logger.error('Pedido sem data de pagamento', order);
+      return;
+    }
+
+    const newOrder = await this.omniaService.createOrder(newOrderFormatted);
+
+    this.logger.log('Pedido criado com sucesso', newOrder);
   }
 
   async syncProducts() {
@@ -349,7 +360,7 @@ export class SyncService {
               price,
             );
             this.logger.log(
-              `🔄 Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`,
+              `Atualizado SKU ${sku} | Campos alterados: ${changes.join(', ')}`,
             );
           });
         } catch (err) {
@@ -477,7 +488,7 @@ export class SyncService {
     }
   }
 
-  private formatClient(order: Order, ibgeCode?: string) {
+  private formatClient(order: Order, ibgeCode: string): CreateOmniClientDto {
     const clientFromNewOrder = {
       codfilial: '4',
       cgcent:
@@ -503,13 +514,17 @@ export class SyncService {
     return clientFromNewOrder;
   }
 
-  private formatOrder(order: Order, ibgeCode?: string) {
+  private formatOrder(order: Order, ibgeCode: string) {
     const allProductsValue = order.line_items.reduce((acc, item) => {
       return Number(acc) + Number(item.total);
     }, 0);
 
+    const brand = order.meta_data.find(
+      (m) => m.key === '_wc_rede_transaction_brand',
+    )?.value;
+
     const newOrderFormatted = {
-      codparceiro: 'MIT-TECH',
+      codparceiro: 'DIGITAL',
       numpedweb: `PED-${order.number}`,
       data: order.date_created,
       condvenda: 1,
@@ -529,11 +544,11 @@ export class SyncService {
       municent: order.billing.city,
       codcidadeibge: ibgeCode,
       telent: order.billing.phone.replace(/\D/g, ''),
-      telcelent: order.billing.cellphone.replace(/\D/g, ''),
+      telcelent: order.billing.phone.replace(/\D/g, ''),
       fretedespacho: 'C',
-      idtransportadora: 'CORREIOS SEDEX',
+      idtransportadora: order.shipping_lines[0].method_title,
       vlprodutos: allProductsValue,
-      vlfrete: order.shipping_tax,
+      vlfrete: order.shipping_total,
       vltotal: order.total,
       itens: order.line_items.map((item) => {
         return {
@@ -548,12 +563,18 @@ export class SyncService {
       pagamentos: [
         {
           adquirente: 'CIELO',
-          formapagamento: order.payment_method,
+          formapagamento: brand ? proccessPaymentMethod(brand) : 'PIX',
           idpagamentopix: '',
           nomeformapagamento: order.payment_method_title,
-          nsucartao: '102030',
-          parcelas: 3,
-          valorpago: 120.0,
+          nsucartao: order.meta_data.find(
+            (m) => m.key === '_wc_rede_transaction_nsu',
+          )?.value,
+          parcelas: Number(
+            order.meta_data.find(
+              (m) => m.key === '_wc_rede_transaction_installments',
+            )?.value ?? 1,
+          ),
+          valorpago: parseFloat(order.total),
         },
       ],
     };

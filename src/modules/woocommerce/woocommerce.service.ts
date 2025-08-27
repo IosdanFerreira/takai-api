@@ -388,7 +388,6 @@ export class WoocommerceService {
         .flatMap((r) => r.value.data),
     ];
 
-    // Deduplicar pelo ID (garante que não tem repetidos por bug da API)
     const unique = new Map<number, any>();
     for (const product of allProducts) {
       unique.set(product.id, product);

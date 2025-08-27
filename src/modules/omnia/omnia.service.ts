@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosError, AxiosInstance } from 'axios';
 
 import { ConfigService } from '@nestjs/config';
+import { CreateOmniClientDto } from './interfaces/omnia-create-client.interface';
 import { OmniClient } from './interfaces/omnia-client.interface';
 import { OmniaPaginatedResponse } from './interfaces/omnia-paginated.interface';
 import { OmniaPriceInterface } from './interfaces/omnia-price.interface';
@@ -196,18 +197,19 @@ export class OmniaService {
     }
   }
 
-  async createClient(client: OmniClient): Promise<any> {
+  async createClient(client: CreateOmniClientDto): Promise<any> {
     const token = await this.getToken();
     this.logger.log('Criando cliente...');
 
     try {
       const response = await this.api.post<OmniClient>(
-        '/api/va/clientes',
+        '/api/clientes',
         client,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
+
       return response.data;
     } catch (error) {
       const formatted = this.formatAxiosError(error);
@@ -221,7 +223,7 @@ export class OmniaService {
     this.logger.log('Criando pedido...');
 
     try {
-      const response = await this.api.post<any>('/api/v1/pedidos', order, {
+      const response = await this.api.post<any>('/api/pedidos', order, {
         headers: { Authorization: `Bearer ${token}` },
       });
       return response.data;
