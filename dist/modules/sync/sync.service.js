@@ -102,7 +102,6 @@ let SyncService = class SyncService {
                 }
                 else {
                     updateProducts.push(product);
-                    this.logger.debug(`SKU existente, será atualizado: ${sku}`);
                 }
             }
             if (newProducts.length > 0) {
@@ -230,9 +229,6 @@ let SyncService = class SyncService {
                     failedUpdates.push(sku);
                     this.logger.error(err, `❌ Erro atualizar SKU ${sku}`);
                 }
-            }
-            else {
-                this.logger.debug(`SKU ${sku} sem alterações, pulando atualização`);
             }
         });
         if (failedUpdates.length > 0) {

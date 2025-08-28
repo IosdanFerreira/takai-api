@@ -140,7 +140,6 @@ export class SyncService {
           this.logger.debug(`SKU novo, será criado: ${sku}`);
         } else {
           updateProducts.push(product);
-          this.logger.debug(`SKU existente, será atualizado: ${sku}`);
         }
       }
 
@@ -367,8 +366,6 @@ export class SyncService {
           failedUpdates.push(sku);
           this.logger.error(err, `❌ Erro atualizar SKU ${sku}`);
         }
-      } else {
-        this.logger.debug(`SKU ${sku} sem alterações, pulando atualização`);
       }
     });
 
