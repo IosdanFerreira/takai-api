@@ -53,7 +53,7 @@ export class WoocommerceService {
       weight: String(weightKg),
       dimensions: finalDimensions,
       type: 'simple',
-      status: 'publish',
+      status: 'draft',
       meta_data: [
         {
           key: '_tiered_price_rules_type',
