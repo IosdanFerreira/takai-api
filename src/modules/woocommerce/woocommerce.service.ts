@@ -94,9 +94,6 @@ export class WoocommerceService {
     price: OmniaPriceInterface,
   ) {
     const productToUpdate: Partial<any> = {
-      name: product.nomeecommerce || product.descricao,
-      description: product.descricaolonga || '',
-      short_description: product.descricaocurta || '',
       regular_price: String(Number(price.pvenda).toFixed(2)),
       manage_stock: true,
       stock_quantity: Math.floor(Number(stock.estoque ?? 0)),

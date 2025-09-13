@@ -198,7 +198,7 @@ export class SyncService {
     }
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async handleCron() {
     this.logger.log('Executando sync automático (a cada hora)');
     await this.syncProducts();
