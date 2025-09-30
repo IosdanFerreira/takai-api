@@ -487,7 +487,7 @@ export class SyncService {
 
   private formatClient(order: Order, ibgeCode: string): CreateOmniClientDto {
     const clientFromNewOrder = {
-      codfilial: '4',
+      codfilial: '3',
       cgcent:
         order?.billing?.persontype === 'F'
           ? order?.billing?.cpf
@@ -525,7 +525,7 @@ export class SyncService {
       numpedweb: `PED-${order.number}`,
       data: order.date_created,
       condvenda: 1,
-      codfilial: '4',
+      codfilial: '3',
       cliente: `${order.billing.first_name} ${order.billing.last_name}`,
       fantasia: order.billing.company ?? '',
       cnpj: order.billing.cnpj,
